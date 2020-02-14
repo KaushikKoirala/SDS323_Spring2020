@@ -1,0 +1,218 @@
+---
+title: "SDS 323 Exercise 1"
+output: pdf_document
+author:
+- "Aaron Grubbs"
+- "Khue Tran"
+- "Kaushik Koirala"
+- "Matthew Tran"
+date: "02/14/2020"
+---
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(mosaic)
+library(readr)
+library(car)
+library(SDSRegressionR)
+library(ggplot2)
+```
+
+## Problem 1: Flights at ABIA
+```{r echo=FALSE, fig.cap="American Airlines flights were the most frequently cancelled, regardless of flight day."}
+dat <- read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/ABIA.csv")
+
+variable_names <- list(
+  "1" = "Monday",
+  "2" = "Tuesday", 
+  "3" = "Wednesday", 
+  "4" = "Thursday", 
+  "5" = "Friday", 
+  "6" = "Saturday", 
+  "7" = "Sunday"
+)
+
+var_labeller <- function(variable, value){
+  return(variable_names[value])
+}
+
+
+
+
+ggplot(dat, aes(x=UniqueCarrier, y = Cancelled, colour=UniqueCarrier)) +
+  geom_bar( stat = "identity", width=0.8) + 
+  facet_wrap(~DayOfWeek, ncol = 2, labeller = var_labeller) +
+  theme(axis.text.x=element_text(angle=60, hjust=1))
+
+
+```
+
+## Problem 2: Regression Practice
+
+```{r echo=FALSE}
+
+creatinine <- read_csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/creatinine.csv")
+
+gf_point(creatclear ~ age, data=creatinine, size=3, alpha=0.8) %>% 
+  gf_labs(title="Creatine Clearance Rate with the Progression of Age") %>%
+  gf_labs(y="Creatine Clearance Rate (ml/min)") %>%
+  gf_labs(x="Age") %>%
+  gf_theme(theme_bw) %>% 
+  gf_lm()
+
+lm(creatclear ~ age, creatinine)
+```
+1. We should expect, on average, `r 147.8129 - (.6198 * 55)` mL/minute as the creatinine clearance rate for a 55-year old.
+
+2. The slope of -.6198 tells us that for every 1 year increase in age, the average creatinine clearance rate is predicted to decrease by .6198mL/minute.
+
+3. The predicted creatinine clearance rate for a 40 year old is `r 147.8129 - (.6198 * 40)` and the predicted creatinine clearance rate for a 60 year old is `r 147.8129 - (.6198 * 60)`. Because a 40 year old with a creatinine clearance rate of 135mL/min is about 10% above the predicted value (123.209mL/min) by the regression line for a 60 year old and because the creatinine clearance rate of 112mL/minute is above the predicted value (110.6249mL/minute) only by about 1 percent, it is healthier to be a 40 year old with a 135mL/min creatinine clearance rate than a 60 year old with a 112mL/min creatinine clearance rate, assuming that the spreads of the creatinine clearance rates at each of those ages are reasonably similar. 
+
+
+## Problem 3: Green Buildings
+```{r echo=FALSE}
+#Cleaning Data
+greenhouse <- read_csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/greenbuildings.csv")
+
+
+
+greenhouse <- greenhouse %>% 
+  mutate(Revenue = size*Rent*leasing_rate*0.01)
+
+greenhouse <- greenhouse %>% 
+  mutate(LEED_f = factor(LEED, levels=c(0,1), labels=c("No", "Yes")))
+
+greenhouse <- greenhouse %>% 
+  mutate(Energystar_f = factor(Energystar, levels=c(0,1), labels=c("No", "Yes")))
+
+greenhouse <- greenhouse %>% 
+  mutate(amenities_f = factor(amenities, levels=c(0,1), labels=c("No", "Yes")))
+
+greenhouse <- greenhouse %>% 
+  mutate(renovated_f = factor(renovated, levels=c(0,1), labels=c("No", "Yes")))
+
+greenhouse$class_col <- 0
+
+for (i in 1:nrow(greenhouse)){
+  n = 0
+  if (greenhouse$class_a[i] == 1){
+    n = 2
+  }
+  if (greenhouse$class_b[i] == 1){
+    n = 1
+  }
+  greenhouse$class_col[i] = n
+}
+
+greenhouse <- greenhouse %>% 
+  mutate(class_col_f = factor(class_col, levels=c(0,1,2), labels=c("C", "B", "A")))
+
+greenhouse <- greenhouse %>% 
+  mutate(green_rating_f = factor(green_rating, levels=c(0,1), labels=c("No", "Yes")))
+
+green <- greenhouse %>% 
+  filter(leasing_rate>0.1)
+
+#All Data Regression
+Gr <- lm(Revenue ~ green_rating_f + amenities_f + age + renovated_f + class_col_f, data=green)
+summary(Gr)
+vif(Gr)
+
+cooks <- cooksPlot(Gr, key.variable ="CS_PropertyID", print.obs=TRUE, save.cutoff =TRUE)
+
+outliers <- cooks %>%
+  filter(Cooks_Distance > cooksCutOff*3) %>%
+  pull(CS_PropertyID)
+
+green_g <- green %>% 
+  filter(CS_PropertyID %not_in% outliers)
+
+Gr_g <- lm(Revenue ~ green_rating_f + amenities_f + age + renovated_f + class_col_f, data=green_g)
+summary(Gr_g)
+
+Equation1=function(x){coef(Gr_g)[4]*x+coef(Gr_g)[1]+coef(Gr_g)[3]+coef(Gr_g)[5]+coef(Gr_g)[7]}
+Equation2=function(x){coef(Gr_g)[4]*x+coef(Gr_g)[1]+coef(Gr_g)[3]+coef(Gr_g)[5]+coef(Gr_g)[7]+coef(Gr_g)[2]}
+
+ggplot(green_g,aes(y=Revenue,x=age,color=green_rating_f))+geom_point()+
+  stat_function(fun=Equation1,geom="line",color=scales::hue_pal()(2)[1])+
+  stat_function(fun=Equation2,geom="line",color=scales::hue_pal()(2)[2])
+
+
+#Filtered Data 
+green15 <- green %>% 
+  filter(stories>=10)
+
+green15 <- green15 %>% 
+  filter(stories<=20)
+
+Gr15 <- lm(Revenue ~ green_rating_f + amenities_f + age + renovated_f + class_col_f, data=green15)
+summary(Gr15)
+vif(Gr15)
+
+cooks <- cooksPlot(Gr, key.variable = "CS_PropertyID", print.obs=TRUE, save.cutoff = TRUE)
+
+outliers <- cooks %>%
+  filter(Cooks_Distance > cooksCutOff*3) %>%
+  pull(CS_PropertyID)
+
+green15_g <- green15 %>% 
+  filter(CS_PropertyID %not_in% outliers)
+
+Gr15_g <- lm(Revenue ~ green_rating_f + amenities_f + age + renovated_f + class_col_f, data=green15_g)
+summary(Gr15_g)
+
+Equation3=function(x){coef(Gr15_g)[4]*x+coef(Gr15_g)[1]+coef(Gr15_g)[3]+coef(Gr15_g)[5]+coef(Gr15_g)[7]}
+Equation4=function(x){coef(Gr15_g)[4]*x+coef(Gr15_g)[1]+coef(Gr15_g)[3]+coef(Gr15_g)[5]+coef(Gr15_g)[7]+coef(Gr15_g)[2]}
+
+ggplot(green15_g,aes(y=Revenue,x=age,color=green_rating_f))+geom_point()+
+  stat_function(fun=Equation3,geom="line",color=scales::hue_pal()(2)[1])+
+  stat_function(fun=Equation4,geom="line",color=scales::hue_pal()(2)[2])
+
+
+```
+
+Right off the bat the guru does not attempt to consider other variables that would affect the rent and thus the projected revenue. Controlling for these other variables gives a larger picture on the actual revenues these buildings are receiving. Comparing the revenues between buildings could prove to be beneficial since it should consider both the rent and occupancy. As it is now there is an assumption that the rent given by the guru is definitely the one that will be used but in actuality it will likely change depending on other factors that again the guru did not account for. The timeline to profitability is also off since it is unknown how the occupancy rate will change once the building is on the market which would affect the breakeven point.
+
+The regression provided is based on the rough estimation of the revenue based on size, occupancy, and rent. Based on the data provided it does not matter whether or not the building has a green certification or not since it does not have a significant impact on income based on the summary of the regression model. The model includes variables that are more easily controlled by the builders, such as amenities and building quality or can be reasonably accounted for such as age. Variables such as utilities and climate were not included due to the complication of how each building pays for utilities and the uncertainty of how the climate may or may not change over time. A second regression was run to filter the buildings that had roughly the same number of stories as the building being proposed (+/-5 stories) since that is known. This regression keeps the same conclusion as the previous one. Of note the other variables, building quality and amenities, do have a significant positive impact on the income.
+
+
+
+
+## Problem 4: Milk 
+The following plot is the plot of quantity of sales vs price.
+
+```{r echo=FALSE}
+milk <- read.csv("http://jgscott.github.io/teaching/data/milk.csv")
+plot(sales ~ price, data=milk)
+```
+
+Because sales price and quantity sold are coupled, we have to use the power law. More generally, we have to get the coefficients of the regression line between log(sales) and log(price). This is what that looks like:
+```{r echo=FALSE, fig.height=6, fig.width=10}
+lm1 = lm(log(sales)~log(price), data=milk)
+plot(log(sales) ~ log(price), data=milk)
+abline(lm1, col='red')
+```
+The coefficients for this regression are `r coef(lm1)[1]` and `r coef(lm1)[2]`. 
+
+Using the first value above as the coefficient of $\beta_{0}$,
+$\alpha$ = $e^{\beta_{0}}$ or $\alpha$ = `r exp(coef(lm1)[1]) `.
+With this we get the following equation:  
+Profit = (price-1) * `r exp(coef(lm1)[1]) ` * $price^{`r coef(lm1)[1]`}$  
+The figure plotted out, where the x-axis is the price, and the y-axis is the profit,  looks like this: 
+
+```{r echo=FALSE}
+curve((x-1)*112.236*x^(-1.62), from=2.60, to=2.70)
+```
+
+The curve shows us that the max profit is around a price point of 2.61. Using a little bit of calculus we can verify that:
+
+```{r echo=FALSE}
+library(mosaicCalc)
+f = D((x-1)*112.236*x^(-1.62)~x)
+print(f)
+roots = uniroot(f, c(0,10))
+print(roots)
+```
+
+The only practical root is indeed at price point $2.61, giving us a max profit of $`r (2.61-1)*112.236*2.61^(-1.62) ` 
