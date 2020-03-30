@@ -324,7 +324,7 @@ saratoga_lowest_rmse = answer_vector[2]
 The best k-value using knn is `r saratoga_knn_best_k` and the RMSE at that k-value is  `r saratoga_lowest_rmse`. 
 
 ### Conclusions
-The best RMSE using the "medium" linear model was $ `r saratoga_rmse_vals[1]`. The best RMSE using the optimized linear model was $ `r saratoga_rmse_vals[2]`. The best RMSE using KNN as the model was $ `r saratoga_lowest_rmse`. If the taxing authority decided to use the optimized linear model, its estimate of a property would improve by $ `r  saratoga_rmse_vals[1]-saratoga_rmse_vals[2]` on average. Additionally, if the taxing authority used the KNN model, its estimate of a property for taxation purposes would significantly improve by $ `r saratoga_rmse_vals[2] - saratoga_lowest_rmse`, on average.
+The best RMSE using the "medium" linear model was $ `r saratoga_rmse_vals[1]`. The best RMSE using the optimized linear model was $ `r saratoga_rmse_vals[2]`. The best RMSE using KNN as the model was $ `r saratoga_lowest_rmse`. If the taxing authority decided to use the optimized linear model, its RMSE of a property would improve by $ `r  saratoga_rmse_vals[1]-saratoga_rmse_vals[2]`. Additionally, if the taxing authority used the KNN model instead of the improved linear model, its RMSE would improve by $ `r saratoga_rmse_vals[2] - saratoga_lowest_rmse`, on average.
 
 One consideration the taxing authority has to make is the tradeoff between the simplicity and interpretability of using the linear model and the more complex but more accurate KNN. The coefficients for the linear model developed in this report are:
 
