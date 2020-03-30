@@ -37,7 +37,7 @@ ggplot(sclass65AMGData)+ ggtitle("65AMG price vs mileage")+ geom_point(mapping=a
 
 In these data distributions, there were `r nrow(sclass350Data)` datapoints for the 350 trim and `r nrow(sclass65AMGData)` datapoints for the 65AMG trim. There were 17 different variables or features for each trim, but the only two variables of interest for this prediction problem are mileage and price. 
 
-For each trim, the data depicted above was partitioned into  random training and test set several (100) times so that one specific random partition wasn't used to generalize for the whole dataset. Within each random partition of the data, the knn model was trained with the training partition of the data and the calculation of the RMSE calculation was done against the testing set (as compared to the prediction of the KNN model). The k-value within each of the random 100 partitions was varied from 3 to 100 in increments of 1. The k-value of 2 could not be tested due to a [bug](https://stackoverflow.com/questions/46520838/subscript-out-of-bounds-in-fnnknn-reg-when-y-is-a-dataframe-and-k-2) that was encountered.  The RMSE for a specific k-value was summed up across the 100 iterations of the 100 different random test-train partitions. In the end, these summed RMSE-values were averaged and the k-value that minimized RMSE was chosen to fit another partition of the testing data one last time. 
+For each trim, the data depicted above was partitioned into  random training and test set several (100) times so that one specific random partition wasn't used to generalize for the whole dataset. Within each random partition of the data, the knn model was trained with the training partition of the data and the calculation of the RMSE calculation was done against the testing set (as compared to the prediction of the KNN model). The k-value within each of the random 100 partitions was varied from 3 to 100 in increments of 1. The RMSE for a specific k-value was summed up across the 100 iterations of the 100 different random test-train partitions. In the end, these summed RMSE-values were averaged and the k-value that minimized RMSE was chosen to fit another partition of the testing data one last time. 
 
 ### Results
 The following is the average (across 100 train-test split partitions) RMSE vs k-value plot for the 350 trim:
@@ -167,8 +167,6 @@ print(ggplot(data = D_test) +
 The optimal k-value for the 350 trim was `r best_k` and the optimal k-value for the 65 AMG trim was `r best_k_65`. The RMSE at the optimal k-value for the 350 trim was `r lowest_rmse`, and the RMSE at the optimal k-value for the 65 AMG trim was `r lowest_rmse_65`. The optimal k-value for the 65 AMG trim was higher and it follows that the RMSE at the higher k-value was higher, as a lower k-value means low-bias and a better (lower) RMSE. 
 
 The optimal k-value for the 65 AMG trim was probably higher because looking at the two plots on Figure 1, we can see that the 350 trim plot was the more distinctly clustered of the two plots, while the 65AMG data points are more  spread out. This means that if a high k-value were to be used for the 350 trim, points from the alternate distinct (and distant) cluster would factor in the prediction, increasing the error. As a consequence, when optimizing the RMSE, the k-value for the 350 trim is lower than the k-value for the 65 AMG trim.
-The optimal k-value 
-You can also embed plots, for example:
 
 ## Problem 2: Saratoga Houses
 ### Problem Overview
