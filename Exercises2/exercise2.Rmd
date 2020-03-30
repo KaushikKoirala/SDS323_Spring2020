@@ -1,0 +1,397 @@
+---
+output: pdf_document
+title: "SDS 323: Exercises 2"
+author: 
+  - "Aaron Grubbs"
+  - "Kaushik Koirala"
+  - "Khue Tran"
+  - "Matthew Tran"
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mosaic)
+library(FNN)
+library(tidyverse)
+library(nnet)
+library(class)
+```
+
+## Problem 1: KNN Practice
+
+### Problem Overview
+The data in [sclass.csv](https://raw.githubusercontent.com/jgscott/SDS323/master/data/sclass.csv) contains data on over 29,000 Mercedes S class vehicles. Each data row will have information such as the mileage, price, trim, color, and year. This report will attempt to separate and examine **ONLY** two of the trims of the Mercedes S class -- *the 350 and the 65 AMG* -- and analyze them separately and compare the two analyses. Specifically, for each trim, the predictability of price using only one other variable (mileage) will be assessed. This will be done by using the K-Nearest-Neighbors(KNN) model. For each trim, the best K-value that predicts price (based on the minimization of RMSE between the predicted price and the actual price) will be used to fit the model and look at it one final time.
+
+### Data and Analysis Process
+
+The only two trims of vehicles that will be examined, as mentioned before are the *350 trim* and the *65AMG trim*. The following plots depict the distribution of mileage vs price for each of the two trims, foreshadowing the challenge of predicting the price of a vehicle given its mileage.
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center', fig.cap="price vs mileage distribution for each trim"}
+sclass = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/sclass.csv")
+sclass350Data = subset(sclass, trim == '350')
+sclass65AMGData = subset(sclass, trim == '65 AMG')
+ggplot(sclass350Data)+ ggtitle("350 trim price vs mileage") + geom_point(mapping=aes(x=mileage, y=price), color='red')
+ggplot(sclass65AMGData)+ ggtitle("65AMG price vs mileage")+ geom_point(mapping=aes(x=mileage, y=price), color='black')
+```
+
+In these data distributions, there were `r nrow(sclass350Data)` datapoints for the 350 trim and `r nrow(sclass65AMGData)` datapoints for the 65AMG trim. There were 17 different variables or features for each trim, but the only two variables of interest for this prediction problem are mileage and price. 
+
+For each trim, the data depicted above was partitioned into  random training and test set several (100) times so that one specific random partition wasn't used to generalize for the whole dataset. Within each random partition of the data, the knn model was trained with the training partition of the data and the calculation of the RMSE calculation was done against the testing set (as compared to the prediction of the KNN model). The k-value within each of the random 100 partitions was varied from 3 to 100 in increments of 1. The k-value of 2 could not be tested due to a [bug](https://stackoverflow.com/questions/46520838/subscript-out-of-bounds-in-fnnknn-reg-when-y-is-a-dataframe-and-k-2) that was encountered.  The RMSE for a specific k-value was summed up across the 100 iterations of the 100 different random test-train partitions. In the end, these summed RMSE-values were averaged and the k-value that minimized RMSE was chosen to fit another partition of the testing data one last time. 
+
+### Results
+The following is the average (across 100 train-test split partitions) RMSE vs k-value plot for the 350 trim:
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center'}
+lower_bounds = 2
+upper_bounds = 100
+my_plotter <- function(dataToPlot){
+  # Make a train-test split for S350Data
+  N = nrow(dataToPlot)
+  N_train = floor(0.8*N)
+  N_test = N - N_train
+  rmse_values <- vector(mode="integer", length=(upper_bounds-lower_bounds)+1)
+  #####
+  # Train/test split for S350 Data
+  #####
+  do(100)*{
+    train_ind = sample.int(N, N_train, replace=FALSE)
+    D_train = dataToPlot[train_ind,]
+    D_test = D_test = dataToPlot[-train_ind,]
+    
+    D_test = arrange(D_test, mileage)
+    
+    X_train = select(D_train, mileage)
+    y_train = select(D_train, price)
+    X_test = select(D_test, mileage)
+    y_test = select(D_test, price)
+    y_train_vector <- y_train[,1]
+    
+    for (k_val in lower_bounds:upper_bounds){
+      knn_fit = knn.reg(train = X_train, test = X_test, y = y_train_vector, k=k_val)
+      rmse = function(y, ypred) {
+        sqrt(mean(data.matrix((y-ypred)^2)))
+      }
+      ypred_knn250 = knn_fit$pred
+      rmse_values[k_val-lower_bounds+1] = rmse(y_test, ypred_knn250) +    
+        rmse_values[k_val-lower_bounds+1]
+    }
+    
+  }
+  for (k_val in lower_bounds:upper_bounds){
+    rmse_values[k_val-lower_bounds+1] = rmse_values[k_val-lower_bounds+1]/100
+  }
+  if (identical(dataToPlot, sclass350Data)==TRUE){
+    plt_title = "RMSE vs K for 350 trim"
+  }
+  else{
+   plt_title = "RMSE vs K for 65 AMG trim" 
+  }
+  
+  print(ggplot()+
+    geom_point(mapping=aes(x=(lower_bounds:upper_bounds), y=rmse_values))+
+      labs(title=plt_title, x="k-value", y="RMSE"))
+  answer_values <- vector(mode="integer", length=2)
+  answer_values[1] = which.min(rmse_values) + lower_bounds - 1
+  answer_values[2] = min(rmse_values)
+  return(answer_values)
+}
+answer_vector = my_plotter(sclass350Data)
+best_k = answer_vector[1]
+lowest_rmse = answer_vector[2]
+```
+The best value of k to use in the KNN model is `r best_k`. The average RMSE across all 100 random train test-splits was `r lowest_rmse`.
+
+Now another train-test split will be done on the 350 trim data to run KNN using the best k-value of `r best_k`. The following depicts the plot of the fitted model for the optimal k-value of  `r best_k`:
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center', fig.cap="price vs mileage fit using optimal k-value for 350 trim"}
+dataToPlot = sclass350Data
+best_k_val = best_k
+N = nrow(dataToPlot)
+N_train = floor(0.8*N)
+N_test = N - N_train
+train_ind = sample.int(N, N_train, replace=FALSE)
+D_train = dataToPlot[train_ind,]
+D_test = D_test = dataToPlot[-train_ind,]
+D_test = arrange(D_test, mileage)
+X_train = select(D_train, mileage)
+y_train = select(D_train, price)
+X_test = select(D_test, mileage)
+y_test = select(D_test, price)
+knn_fit = knn.reg(train = X_train, test = X_test, y = y_train, k=best_k_val)
+ypred_knnfit = knn_fit$pred
+D_test$ypred_knnfit = ypred_knnfit
+print(ggplot(data = D_test) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='lightgrey') + 
+  geom_path(aes(x = mileage, y = ypred_knnfit), color='red'))
+
+```
+
+The following is the average (across 100 train-test split partitions) RMSE vs k-value plot for the 65AMG trim:
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center'}
+answer_vector = my_plotter(sclass65AMGData)
+best_k_65 = answer_vector[1]
+lowest_rmse_65 = answer_vector[2]
+```
+
+The best value of k to use in the KNN model is `r best_k_65`. The average RMSE across all 100 random train test-splits was `r lowest_rmse_65`.
+
+
+Now another train-test split will be done on the 65AMG trim data to run KNN using the best k-value of `r best_k_65`. The following depicts the plot of the fitted model for the optimal k-value of  `r best_k_65`:
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center', fig.cap="price vs mileage fit using optimal k-value for 65 AMG trim"}
+dataToPlot = sclass65AMGData
+best_k_val = best_k_65
+N = nrow(dataToPlot)
+N_train = floor(0.8*N)
+N_test = N - N_train
+train_ind = sample.int(N, N_train, replace=FALSE)
+D_train = dataToPlot[train_ind,]
+D_test = D_test = dataToPlot[-train_ind,]
+D_test = arrange(D_test, mileage)
+X_train = select(D_train, mileage)
+y_train = select(D_train, price)
+X_test = select(D_test, mileage)
+y_test = select(D_test, price)
+knn_fit = knn.reg(train = X_train, test = X_test, y = y_train, k=best_k_val)
+ypred_knnfit = knn_fit$pred
+D_test$ypred_knnfit = ypred_knnfit
+print(ggplot(data = D_test) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='lightgrey') + 
+  geom_path(aes(x = mileage, y = ypred_knnfit), color='red'))
+  
+
+```
+### Conclusions
+The optimal k-value for the 350 trim was `r best_k` and the optimal k-value for the 65 AMG trim was `r best_k_65`. The RMSE at the optimal k-value for the 350 trim was `r lowest_rmse`, and the RMSE at the optimal k-value for the 65 AMG trim was `r lowest_rmse_65`. The optimal k-value for the 65 AMG trim was higher and it follows that the RMSE at the higher k-value was higher, as a lower k-value means low-bias and a better (lower) RMSE. 
+
+The optimal k-value for the 65 AMG trim was probably higher because looking at the two plots on Figure 1, we can see that the 350 trim plot was the more distinctly clustered of the two plots, while the 65AMG data points are more  spread out. This means that if a high k-value were to be used for the 350 trim, points from the alternate distinct (and distant) cluster would factor in the prediction, increasing the error. As a consequence, when optimizing the RMSE, the k-value for the 350 trim is lower than the k-value for the 65 AMG trim.
+The optimal k-value 
+You can also embed plots, for example:
+
+## Problem 2: Saratoga Houses
+### Problem Overview
+[saratoga_lm.r](https://raw.githubusercontent.com/jgscott/SDS323/master/R/saratoga_lm.R) proposes several linear models with which the prices of properties can be assessed for taxation purposes. The linear models take several features of a property such as the number of bedrooms, number of bathrooms, type of sewage construction, etc,. In this script, the best linear model (as identified by the lowest RMSE) is the "medium" model -- a linear model that includes all features of property except its land value, whether it is a waterfront property, its type of sewage facility and whether it is a new construction. This "medium" linear model achieves an RMSE of between 65-67000. This report will attempt to create a better linear model, then using the same variables present in the linear model, attempt to predict the price using a KNN model. The two models will then be compared to see which model better predicts price for taxation purposes.
+
+### Data and Analysis Process
+The SaratogaHouses dataset has property information on `r nrow(SaratogaHouses)` properties. There are `r ncol(SaratogaHouses)` features for each property, including the price of the property. The features are the following:
+```{r, echo=FALSE}
+names(SaratogaHouses)
+```
+
+Using these features, first a linear model will be constructed that will be compared against the "medium" model found in saratoga_lm.r using the mean RMSE of each models. The performance of these linear models will be evaluated across a 100 separate, random test-train splits, where the RMSE for each out of sample fit will be computed. Then, using the variables in the model superior to the "medium" model, several KNN models will be tested for performance. In order to do this, the data (specifically, the quantitative columns) will first be standardized. After standardization, similar to the linear models after 100 random train-test splits, the average rmse will be calculated for each value of K. The results of the superior linear model will then be compared with the KNN model.
+
+### Results
+```{r, echo=FALSE, include=FALSE}
+n = nrow(SaratogaHouses)
+n_train = round(0.8*n)# round to nearest
+integer
+n_test = n - n_train
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+rmse_vals = do(100)*{
+  
+  # re-split into train and test cases with the same sample sizes
+  train_cases = sample.int(n, n_train, replace=FALSE)
+  test_cases = setdiff(1:n, train_cases)
+  saratoga_train = SaratogaHouses[train_cases,]
+  saratoga_test = SaratogaHouses[test_cases,]
+  lm2 = lm(price ~ . - sewer - waterfront - landValue - newConstruction, data=saratoga_train)
+  lm_best_q = lm(price ~ (bedrooms)^2 + (bathrooms)^2 + (livingArea)^2 + (age)^2 + (landValue)^2 + (pctCollege)^2 + (rooms)^2 +newConstruction + waterfront + lotSize, data=saratoga_train)
+  
+  # Predictions out of sample
+  yhat_test2 = predict(lm2, saratoga_test)
+  yhat_test5 = predict(lm_best_q, saratoga_test)
+  c(rmse(saratoga_test$price, yhat_test2),
+    rmse(saratoga_test$price, yhat_test5))
+}
+
+rmse_vals = colMeans(rmse_vals)
+```
+
+The medium linear model as described above, includes all possible property features **except** whether it is a new property, whether it is a waterfront property, the value of the land, and the type of sewage facility. The better linear model developed in this report does two things, it excludes some features from consideration and prioritizes others by adding a squared polynomial term to those features when regressing those features against price.
+
+
+The excluded features are: 
+
+
+- centralAir
+- heating
+- fuel
+- fireplaces
+- sewer
+
+The squared features are: 
+
+
+- bedrooms
+- bathrooms
+- livingArea
+- age
+- landValue
+- pctCollege
+- rooms
+
+In code, the equation looks like this:
+ 
+ `lm(price ~ (bedrooms)^2 + (bathrooms)^2 + (livingArea)^2 + (age)^2 + (landValue)^2 + (pctCollege)^2 + (rooms)^2 +newConstruction + waterfront + lotSize, data=saratoga_train)`
+ 
+
+The RMSE values for the "medium" linear model and the better linear model developed in this report are reported below, with the medium model corresponding to V1 and the better linear model corresponding to V2.
+
+
+```{r, echo=FALSE, fig.cap="Medium model RMSE and better LM RMSE"}
+saratoga_rmse_vals = rmse_vals
+print(saratoga_rmse_vals)
+```
+The variables that have will go into the KNN model have been determined. The following is the head of the dataframe with all the features needed for KNN. The quantitative feature variables in this table have been standardized.  
+```{r, echo=FALSE}
+SaratogaHouses$centralAir <- NULL
+SaratogaHouses$heating <- NULL
+SaratogaHouses$fuel <- NULL
+SaratogaHouses$sewer <- NULL
+SaratogaHouses$fireplaces <- NULL
+SaratogaHouses$age <- scale(SaratogaHouses$age)
+SaratogaHouses$landValue <- scale(SaratogaHouses$landValue)
+SaratogaHouses$livingArea <- scale(SaratogaHouses$livingArea)
+SaratogaHouses$pctCollege <- scale(SaratogaHouses$pctCollege)
+SaratogaHouses$bedrooms <- scale(SaratogaHouses$bedrooms)
+SaratogaHouses$bathrooms <- scale(SaratogaHouses$bathrooms)
+SaratogaHouses$rooms <- scale(SaratogaHouses$rooms)
+head(SaratogaHouses)
+```
+The following is the plot for RMSE vs the k-value used for KNN that have been averaged across the 100 random train-test splits.
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center'}
+lower_bounds = 3
+upper_bounds = 100
+my_plotter <- function(dataToPlot){
+  # Make a train-test split for S350Data
+  N = nrow(dataToPlot)
+  N_train = floor(0.8*N)
+  N_test = N - N_train
+  rmse_values <- vector(mode="integer", length=(upper_bounds-lower_bounds)+1)
+  #####
+  # Train/test split for S350 Data
+  #####
+  do(100)*{
+    train_ind = sample.int(N, N_train, replace=FALSE)
+    D_train = dataToPlot[train_ind,]
+    D_test = D_test = dataToPlot[-train_ind,]
+    
+
+    X_train = select(D_train, lotSize, age, landValue, livingArea, pctCollege, bedrooms, bathrooms, rooms)
+    y_train = select(D_train, price)
+    X_test = select(D_test, lotSize, age, landValue, livingArea, pctCollege, bedrooms, bathrooms, rooms)
+    y_test = select(D_test, price)
+    #y_train_vector <- y_train[,1]
+    
+    for (k_val in lower_bounds:upper_bounds){
+      knn_fit = knn.reg(train = X_train, test = X_test, y = y_train, k=k_val)
+      rmse = function(y, ypred) {
+        sqrt(mean(data.matrix((y-ypred)^2)))
+      }
+      ypred_knn250 = knn_fit$pred
+      rmse_values[k_val-lower_bounds+1] = rmse(y_test, ypred_knn250) +    
+        rmse_values[k_val-lower_bounds+1]
+    }
+    
+  }
+  for (k_val in lower_bounds:upper_bounds){
+    rmse_values[k_val-lower_bounds+1] = rmse_values[k_val-lower_bounds+1]/100
+  }
+  if (identical(dataToPlot, sclass350Data)==TRUE){
+    plt_title = "RMSE vs K for 350 trim"
+  }
+  else{
+   plt_title = "RMSE vs K for Saratoga House Price KNN Model" 
+  }
+  
+  print(ggplot()+
+    geom_point(mapping=aes(x=(lower_bounds:upper_bounds), y=rmse_values))+
+      labs(title=plt_title, x="k-value", y="RMSE"))
+  answer_values <- vector(mode="integer", length=2)
+  answer_values[1] = which.min(rmse_values) + lower_bounds - 1
+  answer_values[2] = min(rmse_values)
+  return(answer_values)
+}
+answer_vector = my_plotter(SaratogaHouses)
+saratoga_knn_best_k = answer_vector[1]
+saratoga_lowest_rmse = answer_vector[2]
+```
+The best k-value using knn is `r saratoga_knn_best_k` and the RMSE at that k-value is  `r saratoga_lowest_rmse`. 
+
+### Conclusions
+The best RMSE using the "medium" linear model was $ `r saratoga_rmse_vals[1]`. The best RMSE using the optimized linear model was $ `r saratoga_rmse_vals[2]`. The best RMSE using KNN as the model was $ `r saratoga_lowest_rmse`. If the taxing authority decided to use the optimized linear model, its estimate of a property would improve by $ `r  saratoga_rmse_vals[1]-saratoga_rmse_vals[2]` on average. Additionally, if the taxing authority used the KNN model, its estimate of a property for taxation purposes would significantly improve by $ `r saratoga_rmse_vals[2] - saratoga_lowest_rmse`, on average.
+
+One consideration the taxing authority has to make is the tradeoff between the simplicity and interpretability of using the linear model and the more complex but more accurate KNN. The coefficients for the linear model developed in this report are:
+
+``` {r, echo=FALSE}
+coef(lm_best_q)
+```
+With the linear model you simply have to plug in the coefficients and feature values for each property you are considering to get an estimate of the property value. For example, if the property in consideration has 3 bedrooms, the number 3 can simply be plugged in along with the predetermined coefficients. Furthermore, each of the coefficients in a linear model can tell the taxing authority how price estimates change per 1 unit change per particular feature while keeping other features constant. With a KNN model, the number 3 can't simply be plugged in, but rather the standardized score of the feature value has to be plugged in as compared to the training data. This technical barrier for the taxing authority might be worth it considering the significant improvement in accuracy.
+
+## Problem 3: Predicting when articles go viral
+### Problem Overview
+The purpose of this model is to attempt to predict whether or not an article will be viral based on numerous characteristics of the model. Virality in this situation is whether or not the article reached 1400 shares on social media threshold. 
+
+### Data and Analysis Process
+The data being used to construct this model was from articles written by Mashable from 2013 and 2014. The variables included in the final model were first checked for significance and then was further reduced based on multicollinearity. The final model predicts shares/virality using number of links, number of pictures, number of videos, number of keywords, average length of words in the article, average shares of referenced Mashable articles, average polarity of negative words, average polarity of positive words, title subjectivity, and title polarity. 
+### Results
+The following are the results when regressing first and thresholding second:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+online_news <- read_csv('https://raw.githubusercontent.com/jgscott/SDS323/master/data/online_news.csv')
+online_news <- mutate(online_news, viral = ifelse(shares > 1400, 1, 0))
+
+#Part 1
+
+regress <- lm(shares ~ num_hrefs + num_imgs + num_videos + average_token_length + num_keywords + 
+              self_reference_avg_sharess + avg_positive_polarity + avg_negative_polarity + 
+              title_subjectivity + abs_title_sentiment_polarity, data=online_news)
+summary(regress)
+
+
+viral = lm(shares ~ num_hrefs + num_imgs + num_videos + average_token_length + num_keywords + 
+                    self_reference_avg_sharess + avg_positive_polarity + avg_negative_polarity + 
+                    title_subjectivity + abs_title_sentiment_polarity, data=online_news)
+phat_test_viral = predict(viral, online_news)
+yhat_test_viral = ifelse(phat_test_viral > 1400, 1, 0)
+confusion = table(y = online_news$viral, yhat = yhat_test_viral)
+confusion
+
+table(online_news$viral)
+accuracy1 <- sum(diag(confusion))/sum(confusion)
+null <- 20082/sum(table(online_news$viral))
+accuracy1 - null
+accuracy1/null
+```
+The following are the results when thresholding first and regressing second:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Part 2
+
+glm(viral ~ num_hrefs + num_imgs + num_videos + average_token_length + num_keywords + 
+      self_reference_avg_sharess + avg_positive_polarity + avg_negative_polarity + 
+      title_subjectivity + abs_title_sentiment_polarity, data=online_news, family=binomial)
+
+logit_viral = glm(viral ~ num_hrefs + num_imgs + num_videos + average_token_length + num_keywords + 
+self_reference_avg_sharess + avg_positive_polarity + avg_negative_polarity + 
+title_subjectivity + abs_title_sentiment_polarity, data=online_news, family=binomial)
+phat_test_logit_viral = predict(logit_viral, online_news, test='response')
+yhat_test_logit_viral = ifelse(phat_test_logit_viral > 0.5, 1, 0)
+confusion_logit = table(y = online_news$viral, yhat = yhat_test_logit_viral)
+confusion_logit
+
+accuracy2 <- sum(diag(confusion_logit))/sum(confusion_logit)
+accuracy2 - null
+accuracy2/null
+
+
+```
+When creating a regression before categorizing virality the absolute improvement rate of falls by 1.27% compared to the null which is predicts no articles are viral, with a relative improvement of 0.98%. The overall error of this model is 50.61% with a true positive rate of 99.86% and false positive rate of 99.77%. When categorizing the virality before creating a regression the absolute improvement rate increases by 1.73% with a relative improvement of 1.03% compared to the null. The overall error is about 47.61% with a true positive rate of 6.88% and a false positive rate of 3.28%.
+
+
+### Conclusions
+Overall neither model is very good at predicting virality, this makes sense since both models on account for roughly 1% of the proportion of variance for shares/virality. However, thresholding before regressing seems to produce the better model. This may be because it simplifies the output of numerical shares into something binary, viral/ not viral.
