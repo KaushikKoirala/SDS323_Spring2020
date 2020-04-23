@@ -1,0 +1,524 @@
+---
+output: pdf_document
+title: "SDS 323: Exercises 3"
+author: 
+  - "Aaron Grubbs"
+  - "Kaushik Koirala"
+  - "Khue Tran"
+  - "Matthew Tran"
+  
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(LICORS)  
+library(foreach)
+library(mosaic)
+library(tidyverse)
+library("jpeg")
+```
+
+
+## Problem 1: Predictive Model Building
+### Problem Overview: 
+Given the data on commercial rental properties, this report aims to generate the best predictive model for price. Using the generated predictive model, this report will additionally aim to determine the change in rental income per square foot given a building's green certification while holding the other features of the building constant. 
+
+### Data Analysis and Process
+In order to create the best model, this report aimed at starting with a simple intuitive linear model and then doing a stepwise selection process to select the proper features and interaction relations between the features.
+
+Using the green_rating variable for the green certification requirement makes creating a predictive model simpler instead of dealing with the 2 categories. The other variables were then separated by their significance in predicting rent when paired with green_rating. Afterwards the variables were ranked in order of r2 to establish the best variables to use in the stepwise process of model improvement. The cluster rent category was removed since that data is based on the rent data. Amenities and Electricity costs both had r2 values in the tenths place and subsequently improved the model based on the decrease in rsme value. Systematically other variables were added and removed, but no other variables were able to reduce the rsme value further. 
+```{r, include=FALSE}
+greenbuildings = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/greenbuildings.csv")
+n = nrow(greenbuildings)
+greenbuildings = na.omit(greenbuildings)
+```
+In code that looks like this: 
+```{r, include=TRUE}
+lm_medium = lm(Rent ~ green_rating + amenities + Electricity_Costs, data=greenbuildings)
+```
+For the stepwise function other variables were included and experimented with such as size and leasing rate. In code that looks like this: 
+```{r, include=FALSE}
+lm_step = step(lm_medium,
+               scope=~(. + cd_total_07 + size + class_a + leasing_rate + class_b)^3)
+```
+`lm_step = step(lm_medium, scope=~(. + cd_total_07 + size + class_a + leasing_rate + class_b)^3)`
+
+### Results
+Here is the output of the stepwise selection:
+```{r, echo=FALSE}
+getCall(lm_step)
+```
+Ultimately, it selected `r length(coef(lm_step))` variables for use in the optimized model. 
+
+Here are the RMSE values for the original linear model (on the left) and the output of the stepwise selection (on the right), calculated across 100 different train test splits.
+
+```{r, echo=FALSE}
+# Compare out of sample performance
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+
+n = nrow(greenbuildings)
+n_train = round(0.8*n)  # round to nearest integer
+n_test = n - n_train
+rmse_vals = do(100)*{
+  
+  # re-split into train and test cases with the same sample sizes
+  train_cases = sample.int(n, n_train, replace=FALSE)
+  test_cases = setdiff(1:n, train_cases)
+  greenbuildings_train = greenbuildings[train_cases,]
+  greenbuildings_test = greenbuildings[test_cases,]
+  
+  # Fit to the training data
+  # use `update` to refit the same model with a different set of data
+  lm1 = update(lm_medium, data=greenbuildings_train)
+  lm2 = update(lm_step, data=greenbuildings_train)
+  
+  # Predictions out of sample
+  yhat_test1 = predict(lm1, greenbuildings_test)
+  yhat_test2 = predict(lm2, greenbuildings_test)
+  
+  c(rmse(greenbuildings$Rent, yhat_test1),
+    rmse(greenbuildings$Rent, yhat_test2))
+}
+
+# noticeable improvement over the starting point!
+colMeans(rmse_vals)
+```
+### Conclusion
+The initial simpler model had the lower RMSE than the result of the stepwise feature selection. It seemed that adding more features and interactions worsened the model and its accuracy as the first three variables were sufficient enough. The coefficients of the first simple model are: 
+```{r, echo=FALSE}
+coef(lm_medium)
+```
+Interpreting the green_rating coefficient, "green" certified properties seemed to improve rent  by around `r coef(lm_medium)[2]` dollars per square foot. 
+
+## Problem 2: What causes what?
+
+1. The question that the researchers were looking at was whether increasing the number of police would reduce the rate of crime in a given city. Intuitively, it might make sense to approach the problem as an independent probability by varying the number of cops and observing fluctuations in crime rates. However, an experimental construct that randomly changes the number of cops on random days is not practical. 
+Another problem arises from the the fact that crime rates also affect the number of police. So places with higher crime rates would naturally have more cops on the street at a given time, making it difficult to see the isolated effect of just increasing cops. A regression model that takes in crime rate and number of cops would not be able to account for such interactions.
+```{r, echo=FALSE}
+# Define variable containing url
+url <- "https://github.com/jgscott/SDS323/raw/master/exercises/ex3table2.jpg"
+download.file(url,'url.jpg', mode = 'wb')
+jj <- readJPEG("url.jpg",native=TRUE)
+plot(0:1,0:1,type="n",ann=FALSE,axes=FALSE)
+rasterImage(jj,0,0,1,1)
+```
+
+2. So the best setting for looking at the correlation between police and crime would control for the positive feedback loop. The researchers accomplished this by collecting data when the terrorist alert system levels are high in D.C., when more cops are put on the street for reasons unrelated to street crime. 
+As summarized in table 2, two models were fitted: the one in the first column only has the dummy variable High Alert while the model in the second column included a term for ridership. For both models, the High Alert variable have negative coefficients with similar standard errors and is significant at the 5% level. The coefficient from the first model implies that on a high alert day, where there are more cops on the streets, the daily number of crimes in D.C. decreases by around 7. Similarly, the second model coefficients imply that when Metro ridership increases by 10 (on a log scale), about 17 more crimes are committed, and 6 less crimes are committed on a high alert day. So from the results of table 2, increased number of cops on high alert days does decrease the number of crimes. The R-squared value for both models were relative low (0.14 and 0.17 respectively), this could indicate that a linear fit might not be the best way to model the correlation bewteen police and crime, but there was still significant decrease in crime with increased number of cops.  
+
+3. It was unknown if the lower crime rates when the threat level was orange was due to the increase in cops on the street or because there was an increase terrorist threat. The reduce crime could be caused by victims and perpetrators being more cautious about being outside during increased terrorist threats. Measuring the Metro ridership measures the general street traffic in DC during those times, which was shown to be relatively unaffected.This was another way to ensure that the correlations observed were just from the number of police. 
+
+```{r, echo=FALSE}
+# Define variable containing url
+url <- "https://github.com/jgscott/SDS323/raw/master/exercises/ex3table4.jpg"
+download.file(url,'url.jpg', mode = 'wb')
+jj <- readJPEG("url.jpg",native=TRUE)
+plot(0:1,0:1,type="n",ann=FALSE,axes=FALSE)
+rasterImage(jj,0,0,1,1)
+```
+
+4. The analysis is further explored in table 4, looking at the effects of dummy variable High Alert and log(ridership) in different districts of D.C. by introducing interaction terms. The model from the first column has negative coefficients for interactions between High Alert and District 1, and High Alert and Other Districts, but only the first was significant. So the effect of increasing the number of police (as seen on high alert days) significantly decreases number of total crimes in District 1. The interaction coefficients tell us that on a high terrorist alert day, about 10 less crimes are commited in District 1 (-7.316 - 2.621) and for other districts, about 7 less crimes are committed. As for the ridership coefficient, the opposite correlation is seen where 2 more crimes are recorded when there are 10 times more rider, consistent with the results of table 2. 
+
+## Problem 3: Clustering and PCA
+
+### Problem Overview: 
+The data for this problem contains information on 11 different chemical properties of 6500 different bottles of wine, as well as two additional classification variables of color (red or white) and quality (judged on a 1-10 scale). 
+
+### Data and Analysis Process:
+Our goal in this problem is to perform dimensionality reduction on the data: principal components analysis (PCA) and clustering. From there, we must summarize and see if our results can distinguish the red and white wines as well as the quality of the wines from our own intuition.
+
+In order to solve this problem, we first need to perform PCA, look at the loadings and principal components of each summary, and form a conclusion. We also need to perform k-means clustering, and check if the clusters can distinctly distinguish our data in terms of quality and color. 
+
+After analysis has been done, we compare our models to see which one makes the most sense to us, and see if either analysis did a better job in distinguishing the reds and whites as well as the quality.
+
+```{r}
+wine = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/wine.csv", header=TRUE)
+# summary of data
+summary(wine)
+str(wine)
+
+wine_variables = wine %>% select(-quality, -color)
+
+```
+
+```{r}
+PCAwine = prcomp(wine_variables, scale=TRUE)
+plot(PCAwine)
+summary(PCAwine)
+round(PCAwine$rotation[,1:3],2) 
+```
+
+After running PCA, we can see that from PC1 and PC2, the cumulative proportion of variance accounts for already roughly 50.21% of the data. 
+
+```{r}
+# scree plot
+screeplot(PCAwine, npcs = min(10, length(PCAwine$sdev)),type="lines")
+```
+
+The scree plot entails that our proportion variance does decrease over time as the number of principal components increases.  
+
+```{r}
+wine_scores = PCAwine$x
+summary(wine_scores)
+# PCA1 gives the best separation 
+qplot(wine_scores[,1], wine_scores[,2], color=color, facets=~quality,xlab='Component 1', ylab='Component 2', data = wine)
+
+qplot(wine_scores[,1], wine_scores[,3], color=color, facets=~quality,xlab='Component 1', ylab='Component 3', data = wine)
+
+# too much overlap, wrong direction
+qplot(wine_scores[,2], wine_scores[,3], color=color, facets=~quality,xlab='Component 2', ylab='Component 3', data = wine)
+
+# faceting by color and look at quality trends, doesn't work well
+qplot(wine_scores[,1], wine_scores[,2], color=quality, facets=~color,xlab='Component 1', ylab='Component 2', data = wine)
+
+qplot(wine_scores[,1], wine_scores[,3], color=quality, facets=~color,xlab='Component 1', ylab='Component 3', data = wine)
+
+qplot(wine_scores[,2], wine_scores[,3], color=quality, facets=~color,xlab='Component 2', ylab='Component 3', data = wine)
+
+qplot(wine_scores[,1], wine_scores[,2], color=color, xlab='Component 1', ylab='Component 2', data=wine)
+
+```
+
+When comparing PC1, PC2, PC3 in the context of our red and white colors, we see that the noise in the data is not distinguishable as the number of principal components increase; they tend to "weave together".
+
+Since the PCA with all 3-8 quality points didn't work well (we could not see clear separation) we try to split quality into 2 groups, 5 and below and above 5 and run another PCA.
+
+```{r}
+high_qual <- wine %>% filter(grepl("6|7|8", quality)) %>% mutate(qual="6-8") %>% select(-quality)
+low_qual <- wine %>% filter(grepl("3|4|5", quality)) %>% mutate(qual="3-5") %>% select(-quality)
+wine_by_qual <- full_join(high_qual, low_qual)
+
+dim(high_qual)
+dim(low_qual)
+
+wine_var_only = wine_by_qual %>% select(-color, -qual)
+
+PCAwine_qual = prcomp(wine_var_only, scale=TRUE)
+summary(PCAwine_qual)
+
+qual_scores = PCAwine_qual$x
+
+qplot(qual_scores[,1], qual_scores[,2], color=qual, facets=~color,xlab='Component 1', ylab='Component 2', data = wine_by_qual)
+
+qplot(qual_scores[,1], qual_scores[,3], color=qual, facets=~color,xlab='Component 1', ylab='Component 3', data = wine_by_qual)
+
+qplot(qual_scores[,2], qual_scores[,3], color=qual, facets=~color,xlab='Component 2', ylab='Component 3', data = wine_by_qual)
+
+# despite the color separation still seem very clear
+qplot(qual_scores[,1], qual_scores[,3], color=color, facets=~qual, data=wine_by_qual)
+
+# see that there seems to be separation bewteen higher and lower quality, but not clear with our PCA
+
+```
+
+We can now see a separation between higher and lower quality, but it is still not clear using the PCA method.
+
+```{r}
+loadings = PCAwine$rotation
+summary(loadings)
+
+# 3 most negatively associated variables 
+loadings[,1] %>% sort %>% head(3)
+lm1 = lm(quality ~ residual.sugar+free.sulfur.dioxide+total.sulfur.dioxide, data=wine)
+summary(lm1)
+
+# 3 most positively associated variables
+loadings[,1] %>% sort %>% tail(3)
+lm2 = lm(quality ~ volatile.acidity+sulphates+chlorides, data=wine)
+summary(lm2)
+
+```
+
+Now, we perform clustering to see if it provides us better information about the quality and color variables of the data. This is done using k-means clustering. 
+
+```{r}
+library(ggplot2)
+library(LICORS)  # for kmeans++
+library(foreach)
+library(mosaic)
+
+wine = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/wine.csv", header=TRUE)
+
+summary(wine)
+
+# Convert variable "color" to a numeric column vector. 
+# "1" for red and "2" for white
+wine$color <- as.numeric(wine$color)
+
+# Center and scale the data
+X = wine[,-(12:13)]
+X = scale(X, center=TRUE, scale=TRUE)
+
+# Extract the centers and scales from the rescaled data (which are named attributes)
+mu = attr(X,"scaled:center")
+sigma = attr(X,"scaled:scale")
+
+# Run k-means with 6 clusters and 50 starts
+clust1 = kmeans(X, 6, nstart=50)
+cluster_number = 1
+```
+
+```{r, echo=FALSE}
+clust1$center[cluster_number,]*sigma + mu
+```
+
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=wine, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+
+```{r, echo=FALSE}
+cluster_number = 3
+clust1$center[cluster_number,]*sigma + mu
+```
+
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=wine, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+
+
+```{r}
+# What are the clusters?
+clust1$center  # not super helpful
+clust1$center[1,]*sigma + mu
+clust1$center[2,]*sigma + mu
+clust1$center[4,]*sigma + mu
+
+# A few plots with cluster membership shown
+# qplot is in the ggplot2 library
+#qplot(total.sulfur.dioxide, citric.acid, data=wine, #color=factor(clust1$cluster))
+qplot(fixed.acidity, density, data=wine, color=factor(clust1$cluster))
+
+
+
+```
+
+After performing k-means clustering, we see that the data can be distinguished better in terms of clusters.
+
+### Conclusion:
+From both PCA and k-means clustering, we can see that k-means clustering offers a better visualization of distinguishing the quality and reds/whites in the data since k-means allows us to look at it in clusters. 
+
+PCA, on the other hand, does not: it is unable to distinguish the red and white wines and the higher and lower quality wines. 
+
+However in term of what "makes sense", PCA has better interpretability compared to k-means clustering, because it summarize the information in components while k-means summarizes the data in chunks.
+
+
+
+
+
+
+
+## Problem 4: Market Segmentation
+### Problem Overview: 
+```{r, include=FALSE}
+marketing_data = read.csv('https://raw.githubusercontent.com/jgscott/SDS323/master/data/social_marketing.csv', header=TRUE)
+
+```
+
+NutrientH2O has collected twitter data on `r nrow(marketing_data)` of their followers. For each of their followers, the data collectors have counted the frequencies the follower will tweet about `r ncol(marketing_data)-1` given topics, such as sports or politics, over a week. Proper analysis of this data could lead to better targeting and marketing for products. This report will aim to identify different groups or types of customers, or segments of the market, that are part of the customer base for Nutrient H2O. 
+
+### Data and Analysis Process
+Following the principle of satisfice and some trial and error, 5 clusters will be identified using the KMEANS clustering algorithm. Much more than 5 will probably be unfeasible for NutrientH20 to carry out targeted ad campaigns for all clustered groups. 
+
+Each cluster will represent a segment of the market and a "kind" of customer to target for NutrientH20. What each cluster represents will be determined by the Euclidean coordinates of the centroid (the average point in the cluster). If the coordinates for any one topic are particularly high, it means that the frequency that the average person in that cluster tweets about that topic is also high. Among the topics, the topic of "chatter" has been discarded from the dataset as it is very general and not that useful for marketing purposes. 
+
+### Results
+```{r, include=FALSE}
+X = marketing_data[,-(1:2)] # removing the first column as its just a trivial user id
+# also removing second column, chatter doesn't seem that useful
+X = scale(X, center=TRUE, scale=TRUE)
+# Extract the centers and scales from the rescaled data (which are named attributes)
+mu = attr(X,"scaled:center")
+sigma = attr(X,"scaled:scale")
+# Run k-means with 5 clusters and 25 starts
+clust1 = kmeans(X, 5, nstart=25)
+cluster_number = 1
+```
+The centroid coordinates for the first cluster are:
+```{r, echo=FALSE}
+clust1$center[cluster_number,]*sigma + mu
+```
+The topics that stand out most in this cluster are:
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+The following is a plot of the users based on the frequency with which they tweet about `r best_variable` and `r second_best_variable`. The users are color coded by cluster. 
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=marketing_data, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+As can be seen from the plot above, the most frequent tweeters on topics `r best_variable` and `r second_best_variable` (top right of the graph) are mostly all in cluster `r cluster_number`.
+
+The centroid coordinates for the second cluster are:
+```{r, echo=FALSE}
+cluster_number = 2
+clust1$center[cluster_number,]*sigma + mu
+```
+The topics that stand out most in this cluster are:
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+The following is a plot of the users based on the frequency with which they tweet about `r best_variable` and `r second_best_variable`. The users are color coded by cluster. 
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=marketing_data, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+As can be seen from the plot above, the most frequent tweeters on topics `r best_variable` and `r second_best_variable` (top right of the graph) are mostly all in cluster `r cluster_number`.
+
+
+
+
+
+The centroid coordinates for the third cluster are:
+```{r, echo=FALSE}
+cluster_number = 3
+clust1$center[cluster_number,]*sigma + mu
+```
+The topics that stand out most in this cluster are:
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+The following is a plot of the users based on the frequency with which they tweet about `r best_variable` and `r second_best_variable`. The users are color coded by cluster. 
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=marketing_data, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+As can be seen from the plot above, the most frequent tweeters on topics `r best_variable` and `r second_best_variable` (top right of the graph) are mostly all in cluster `r cluster_number`.
+
+The centroid coordinates for the fourth cluster are:
+```{r, echo=FALSE}
+cluster_number = 4
+clust1$center[cluster_number,]*sigma + mu
+```
+The topics that stand out most in this cluster are:
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+
+```
+The following is a plot of the users based on the frequency with which they tweet about `r best_variable` and `r second_best_variable`. The users are color coded by cluster. 
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=marketing_data, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+As can be seen from the plot above, the most frequent tweeters on topics `r best_variable` and `r second_best_variable` (top right of the graph) are mostly all in cluster `r cluster_number`.
+
+The centroid coordinates for the fifth cluster are:
+```{r, echo=FALSE}
+cluster_number = 5
+clust1$center[cluster_number,]*sigma + mu
+
+```
+
+The topics that stand out most in this cluster are:
+```{r, echo=FALSE}
+best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
+N = 2
+ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
+index_val <- ndx[2]
+
+second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
+print(best_variable)
+print(second_best_variable)
+```
+The following is a plot of the users based on the frequency with which they tweet about `r best_variable` and `r second_best_variable`. The users are color coded by cluster. 
+
+```{r, echo=FALSE}
+x_var=as.name(best_variable)
+
+y_var=as.name(second_best_variable)
+qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=marketing_data, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
+
+```
+As can be seen from the plot above, the most frequent tweeters on topics `r best_variable` and `r second_best_variable` (top right of the graph) are mostly all in cluster `r cluster_number`.
+
+### Conclusions
+The four market segments that best seem to be indicated from the Twitter data are:
+  
+  - Users that cook and share photos often (cooking, photo_sharing)
+  
+  - Consumers that are into health and nutrition and personal fitness (health_nutrition, personal_fitness)
+  
+  - Politically informed/opinionated travellers (politics, travel)
+  
+  - And religious sports fanatics (religion, sports_fandom)
+
+A fifth cluster for photo sharing college/university students was tested but the data didn't cluster well. 
+
+NutrientH20 can make good use of these clusterings by marketing differently to customers in those different groups. 
