@@ -137,25 +137,19 @@ After analysis has been done, we compare our models to see which one makes the m
 
 ```{r}
 wine = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/wine.csv", header=TRUE)
-# summary of data
-summary(wine)
-str(wine)
 
 wine_variables = wine %>% select(-quality, -color)
-
 ```
 
 ```{r}
 PCAwine = prcomp(wine_variables, scale=TRUE)
 plot(PCAwine)
-summary(PCAwine)
 round(PCAwine$rotation[,1:3],2) 
 ```
 
 After running PCA, we can see that from PC1 and PC2, the cumulative proportion of variance accounts for already roughly 50.21% of the data. 
 
 ```{r}
-# scree plot
 screeplot(PCAwine, npcs = min(10, length(PCAwine$sdev)),type="lines")
 ```
 
@@ -163,21 +157,12 @@ The scree plot entails that our proportion variance does decrease over time as t
 
 ```{r}
 wine_scores = PCAwine$x
-summary(wine_scores)
-# PCA1 gives the best separation 
-qplot(wine_scores[,1], wine_scores[,2], color=color, facets=~quality,xlab='Component 1', ylab='Component 2', data = wine)
 
 qplot(wine_scores[,1], wine_scores[,3], color=color, facets=~quality,xlab='Component 1', ylab='Component 3', data = wine)
 
-# too much overlap, wrong direction
 qplot(wine_scores[,2], wine_scores[,3], color=color, facets=~quality,xlab='Component 2', ylab='Component 3', data = wine)
 
-# faceting by color and look at quality trends, doesn't work well
-qplot(wine_scores[,1], wine_scores[,2], color=quality, facets=~color,xlab='Component 1', ylab='Component 2', data = wine)
-
 qplot(wine_scores[,1], wine_scores[,3], color=quality, facets=~color,xlab='Component 1', ylab='Component 3', data = wine)
-
-qplot(wine_scores[,2], wine_scores[,3], color=quality, facets=~color,xlab='Component 2', ylab='Component 3', data = wine)
 
 qplot(wine_scores[,1], wine_scores[,2], color=color, xlab='Component 1', ylab='Component 2', data=wine)
 
@@ -192,13 +177,9 @@ high_qual <- wine %>% filter(grepl("6|7|8", quality)) %>% mutate(qual="6-8") %>%
 low_qual <- wine %>% filter(grepl("3|4|5", quality)) %>% mutate(qual="3-5") %>% select(-quality)
 wine_by_qual <- full_join(high_qual, low_qual)
 
-dim(high_qual)
-dim(low_qual)
-
 wine_var_only = wine_by_qual %>% select(-color, -qual)
 
 PCAwine_qual = prcomp(wine_var_only, scale=TRUE)
-summary(PCAwine_qual)
 
 qual_scores = PCAwine_qual$x
 
@@ -208,10 +189,8 @@ qplot(qual_scores[,1], qual_scores[,3], color=qual, facets=~color,xlab='Componen
 
 qplot(qual_scores[,2], qual_scores[,3], color=qual, facets=~color,xlab='Component 2', ylab='Component 3', data = wine_by_qual)
 
-# despite the color separation still seem very clear
 qplot(qual_scores[,1], qual_scores[,3], color=color, facets=~qual, data=wine_by_qual)
 
-# see that there seems to be separation bewteen higher and lower quality, but not clear with our PCA
 
 ```
 
@@ -219,17 +198,14 @@ We can now see a separation between higher and lower quality, but it is still no
 
 ```{r}
 loadings = PCAwine$rotation
-summary(loadings)
 
 # 3 most negatively associated variables 
 loadings[,1] %>% sort %>% head(3)
 lm1 = lm(quality ~ residual.sugar+free.sulfur.dioxide+total.sulfur.dioxide, data=wine)
-summary(lm1)
 
 # 3 most positively associated variables
 loadings[,1] %>% sort %>% tail(3)
 lm2 = lm(quality ~ volatile.acidity+sulphates+chlorides, data=wine)
-summary(lm2)
 
 ```
 
@@ -237,13 +213,12 @@ Now, we perform clustering to see if it provides us better information about the
 
 ```{r}
 library(ggplot2)
-library(LICORS)  # for kmeans++
-library(foreach)
-library(mosaic)
+#library(LICORS)  # for kmeans++
+#library(foreach)
+#library(mosaic)
 
 wine = read.csv("https://raw.githubusercontent.com/jgscott/SDS323/master/data/wine.csv", header=TRUE)
 
-summary(wine)
 
 # Convert variable "color" to a numeric column vector. 
 # "1" for red and "2" for white
@@ -285,44 +260,9 @@ qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), da
 
 ```
 
-```{r, echo=FALSE}
-cluster_number = 3
-clust1$center[cluster_number,]*sigma + mu
-```
-
-```{r, echo=FALSE}
-best_variable = names(which.max(clust1$center[cluster_number,]*sigma + mu))
-N = 2
-ndx <- order(clust1$center[cluster_number,]*sigma + mu, decreasing = T)[1:N]
-index_val <- ndx[2]
-
-second_best_variable = names(clust1$center[cluster_number,]*sigma + mu)[index_val]
-print(best_variable)
-print(second_best_variable)
-```
-
-```{r, echo=FALSE}
-x_var=as.name(best_variable)
-
-y_var=as.name(second_best_variable)
-qplot(eval(parse(text=best_variable)),eval(parse(text=second_best_variable)), data=wine, color=factor(clust1$cluster), xlab=best_variable, ylab=second_best_variable)
-
-```
-
-
 ```{r}
-# What are the clusters?
-clust1$center  # not super helpful
-clust1$center[1,]*sigma + mu
-clust1$center[2,]*sigma + mu
-clust1$center[4,]*sigma + mu
 
-# A few plots with cluster membership shown
-# qplot is in the ggplot2 library
-#qplot(total.sulfur.dioxide, citric.acid, data=wine, #color=factor(clust1$cluster))
 qplot(fixed.acidity, density, data=wine, color=factor(clust1$cluster))
-
-
 
 ```
 
@@ -334,13 +274,6 @@ From both PCA and k-means clustering, we can see that k-means clustering offers 
 PCA, on the other hand, does not: it is unable to distinguish the red and white wines and the higher and lower quality wines. 
 
 However in term of what "makes sense", PCA has better interpretability compared to k-means clustering, because it summarize the information in components while k-means summarizes the data in chunks.
-
-
-
-
-
-
-
 ## Problem 4: Market Segmentation
 ### Problem Overview: 
 ```{r, include=FALSE}
