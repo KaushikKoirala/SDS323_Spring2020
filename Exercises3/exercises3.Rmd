@@ -274,7 +274,10 @@ From both PCA and k-means clustering, we can see that k-means clustering offers 
 PCA, on the other hand, does not: it is unable to distinguish the red and white wines and the higher and lower quality wines. 
 
 However in term of what "makes sense", PCA has better interpretability compared to k-means clustering, because it summarize the information in components while k-means summarizes the data in chunks.
+
+
 ## Problem 4: Market Segmentation
+
 ### Problem Overview: 
 ```{r, include=FALSE}
 marketing_data = read.csv('https://raw.githubusercontent.com/jgscott/SDS323/master/data/social_marketing.csv', header=TRUE)
