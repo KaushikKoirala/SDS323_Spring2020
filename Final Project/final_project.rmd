@@ -1,0 +1,449 @@
+---
+title: "SDS 323 Project: Predicting County-Level Voter Turnout"
+output: pdf_document
+author:
+  - "Aaron Grubbs"
+  - "Kaushik Koirala"
+  - "Khue Tran"
+  - "Matthew Tran"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(SDSRegressionR)
+library(tidyverse)
+library(mosaic)
+library(car)
+library(sjPlot)
+library(ggplot2)
+library(tree)
+library(lubridate)
+library(randomForest)
+library(pdp)
+library(readr)
+library(foreach)
+library(doParallel)
+library(FNN)
+library(nnet)
+library(class)
+
+```
+
+## I. Abstract
+This report attempts to determine the relevant factors that contribute to voter turnout using data obtained from the 2016 election with four predictive models: KNN, linear regression, random forest, and PCA. Overall KNN produced the best model with an RMSE of 0.09, but the other models performed fairly with RMSEs roughly between 8 and 10. All the models conclude that the most relevant factors in predicting voter turnout to be ones involved in socioeconomic status; specifically negative ones such as lower educational attainment. From these results, political candidates and the government can allocate their resources more effectively to fulfill their voter turnout objectives.
+
+## II. Introduction
+In the United States, elections for public office occur at several levels. However, elections for president receive the most attention, utilize the most resources, and persuade the most of the public to turnout and vote.^[https://www.americanprogress.org/issues/democracy/reports/2018/07/11/453319/increasing-voter-participation-america/] In the 2016 election cycle, at the federal level, over 36% of all election spending was on the presidential election alone, while the remaining nearly 64% percent were spent across several hundred congressional elections.^[https://www.opensecrets.org/overview/cost.php?display=T&infl=Y]. These resources are often dispensed to target particular demographics, and campaigns often rely on the groups of high-turnout voting blocs.^[https://www.aarp.org/politics-society/government-elections/info-2018/power-role-older-voters.html] In this context, this report aims to determine the best statistical model for predicting voter turnout as a percentage of the approximate voting age population in a presidential election at the county level, using information such as the racial composition of a county, the educational demographics of  a county, county poverty rates, and several other county level statistics. This report will also explore which county-level factors are most crucial in determining a county's voter turnout. This report will use county-level data from the 2016 presidential election as the training data to build models that will predict county level voter turnouts. In the future, thhese predictive models can be leveraged, from the campaigns' perspective,  to predict which counties will have the highest turnout and more efficiently allocate electoral resources. From a governmental perspective, these models can also be used to predict the counties most vulnerable to low voter participation due to shifting demographics or population metrics, and deploy government resources to instead encourage greater participation.           
+
+## III. Methods
+
+### Data
+The data for this report was collected mainly from two different internet sources. One was used to collect demographic information at the county level.^[https://public.opendatasoft.com/explore/dataset/usa-2016-presidential-election-by-county/table/?disjunctive.state] This demographic information included descriptive statistics for a county such as the poverty rate, or education levels. The second source specifically provided county level voting statistics, such as the number of Democrat votes, the number of Republican votes, and most importantly the voter turnout.^[http://proximityone.com/elections2016.htm] It is important to note that this voter turnout is based on an estimate of the Voting Age Population (VAP) for the county. Because the estimate can be an underestimate, it is possible for a county to report more than 100% turnout, however this has only once happened. The demographic information in the first dataset was combined with the turnout information provided in the second dataset. Many feature columns in the demographics dataset, such as weather and location data, were removed to prevent sparse, redundant data from affecting model complexity, interpretability and computational efficiency. Additionally, it must be noted that county level data for counties in Alaska could not be obtained. The simplified data used for analysis can be found **[here](https://raw.githubusercontent.com/KaushikKoirala/SDS323_Spring2020/master/Final%20Project/2016_election_county_dataset.csv)**. Many of the techniques in this report may use subsets of the features in the linked dataset to build the most optimal model.
+
+### Regression Models
+The following 4 statistical models will be used for regression to predict the voter turnout level for a county:
+
+  * Linear Model
+  * PCA-based Regression
+  * KNN
+  * RandomForests
+
+Metrics such as the RMSE will be compared and discussed for each of the models. The methodology behind the implementation of each of these models will be discussed in this section.
+
+### Linear Regression
+This method of model production uses a stepwise/sequential approach. Each variable in consideration was evaluated by their significance, missingness, and proportion of variance accounted for on the variable “Turnout” and ordered from most impactful to least impactful. Starting with the most impactful variable “Poverty Rate” additional variables were added to the model in sequence. With each additional variable a model dataset was created by removing instances of missingness and outliers determined by using two times cook’s distance as the cutoff. Using the new model data, the new model and the previous model were compared using ANOVA to evaluate whether there was a significant improvement between the models. This process was repeated until the final model was produced. Of note some variables were removed from consideration as the process went on, without testing the variance inflation factor, due to inclusions of previous related variables. For example, the Democrat percentage is closely related to the Republican percentage so only one would be appropriate to include.
+
+
+### PCA-based Regression
+
+The working dataset contains 50 variables, which can lead to overfitting in high dimensional space when used with regression. So we will implement PCA as a dimension reducing method to extract important variables which will then be used in a regression model. The coefficients from the component regression model will not be directly interpretable, but will provide insights into which variables are significant as predictors of voter turnout. 
+
+### KNN
+In this method, we want to perform k nearest neighbors (KNN) to see if any of our features
+impact the voter turnout. In order to measure this, we select a set of features such that
+our root-mean squared error (RMSE) is minimized. This is done by analyzing the all of thes
+features and checking if any combination of them have an impact on the RMSE on whether
+it decreases or increases based on the number of features used in the model.
+
+For features that have an “N/A” in the data, we are going to assume that these “no shows”
+are zero - we apply the is.na function to fill in these cells. After that, we eliminate variables
+that have too many missing values - these include: Poor_Physical_Health,
+Poor_Mental_Health, Low_Birthweight, Teen_Births, Adult_Smoking, Adult_Obesity,
+Diabetes, STDs, and HIV_Rate. We also eliminate County and State, since they are
+categorical features that have no affect on our numerical features.
+Finally, we scale all of our features since KNN must use scaled features to run properly.
+
+### RandomForests  
+  
+  
+In order to use the RandomForests bagging model, some features present in the data will not be used. The county name is merely a descriptor variable for which we are trying to determine voter turnout and will not be used. The state that a county is in is a categorical variable present in the dataset, but creating one hot features for the 49 states in the dataset will create a sparse dataset. Additionally, some county health statistics features such as HIV rate, physical and mental health, and adult smoking rates will be dropped due to their sparsity.^[While not true for every model, sparse features have to be dropped so an excessive amount of rows and data are not omitted due to missing data.] Lastly, the raw vote tally for people who turned out to vote in a particular county will also not be considered as predicting turnout as a percentage when raw vote numbers have already been obtained is futile. 
+
+The data will be regressed on Turnout. Because RandomForest is a bagging technique that finds the true signal by counterintuitively amplifying the noise, there aren't concerns of overfitting or a lack cross-validation. The RMSE will be computed on the test set, but the RMSE is expected to be relatively similar across several random train-test splits. Then, with the trained random forest model a variable Importance Plot will be generated that will show each variable's impact on the MSE of the overall model, implying the importance of that particular variable in predicting turnout.   
+
+
+## IV. Results
+### Linear Regression
+The following table shows the semi-partial correlations from the constructed linear regression model.
+```{r, include=FALSE}
+Test = read.csv('https://raw.githubusercontent.com/KaushikKoirala/SDS323_Spring2020/master/Final%20Project/2016_election_county_dataset.csv')
+
+full <- lm(Turnout ~ Poverty_Rate +LT_High_School +Children_1_Parent +Poor_Physical_Health 
+           +Teen_Births +Median_Age +Service +Democrat +White_Not_Latino +Green +School_Enrollment
+           +Adult_Obesity +Low_Birthweight +Total_Population +Agriculture
+           +Libertarian, data=Test)
+vif(full)
+
+cooks <- cooksPlot(full, key.variable = "County", print.obs = TRUE, save.cutoff = TRUE)
+cut <- cooksCutOff * 2
+outliers <- cooks %>%
+  filter(Cooks_Distance > cut) %>%
+  pull(County)
+gTest <- Test %>% 
+  filter(County %not_in% outliers)
+gfull <- lm(Turnout ~ Poverty_Rate +LT_High_School +Children_1_Parent +Poor_Physical_Health 
+            +Teen_Births +Median_Age +Service +Democrat +White_Not_Latino +Green +School_Enrollment
+            +Adult_Obesity +Low_Birthweight +Total_Population +Agriculture
+            +Libertarian, data=gTest)
+gModel <- modelData(gfull)
+
+Initial <- lm(Turnout ~ Poverty_Rate +LT_High_School +Children_1_Parent +Poor_Physical_Health 
+              +Teen_Births +Median_Age +Service +Democrat +White_Not_Latino +Green +School_Enrollment
+              +Adult_Obesity +Low_Birthweight +Total_Population +Agriculture, data=gModel)
+    New <- lm(Turnout ~ Poverty_Rate +LT_High_School +Children_1_Parent +Poor_Physical_Health 
+              +Teen_Births +Median_Age +Service +Democrat +White_Not_Latino +Green +School_Enrollment
+              +Adult_Obesity +Low_Birthweight +Total_Population +Agriculture
+              +Libertarian, data=gModel)
+anova(Initial, New)
+summary(New)
+# semi-partial correlation 
+```
+```{r, echo=FALSE}
+#pCorr(New)$Part_Corr_sq*100
+x <- c('Poverty_Rate', 'LT_High_School', 'Children_1_Parent', 'Poor_Physical_Health','Teen_Births', 'Median_Age','Service', 'Democrat', 'White_Not_Latino', 'Green', 'School_Enrollment', 'Adult_Obesity', 'Low_Birthweight', 'Total_Population', 'Agriculture', 'Libertarian')
+setNames(pCorr(New)$Part_Corr_sq*100, x)
+
+```
+
+```{r, include=FALSE}
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+lmM = (lm(Turnout ~ Poverty_Rate +LT_High_School +Children_1_Parent +Poor_Physical_Health 
+          +Teen_Births +Median_Age +Service +Democrat +White_Not_Latino +Green +School_Enrollment
+          +Adult_Obesity +Low_Birthweight +Total_Population +Agriculture
+          +Libertarian, data=gModel))
+
+
+
+lmModel = step(lmM, 
+               scope=~(.)^3)
+
+
+n = nrow(gModel)
+n_train = round(0.8*n)
+n_test = n - n_train
+rmse_vals = do(100)*{
+  
+  train_cases = sample.int(n, n_train, replace=FALSE)
+  test_cases = setdiff(1:n, train_cases)
+  gModel_train = gModel[train_cases,]
+  gModel_test = gModel[test_cases,]
+  
+  lm2 = update(lmModel, data=gModel_train)
+  
+  yhat_test2 = predict(lm2, gModel_test)
+  
+  c(rmse(gModel$Turnout, yhat_test2))
+}
+
+rmse_val = colMeans(rmse_vals)
+
+```
+The final model uses poverty rate, less than high school education percentage, children living with 1 parent percentage, number of poor physical health days, teen births, median age, service occupation percentage, Democrat percentage, White (Not Latino) population percentage, Green party percentage, school enrollment, adult obesity, low birthweight, total population, agriculture occupation percentage, and Libertarian party percentage to predict the turnout rate of a county during an election. The RMSE of this model is `r rmse_val`.This model was shown to be overall significant with a p-value <0.05 and can account for 11% of the variance in turnout rate. Using the semi-partial correlation median age is shown to be the most impactful variable accounting for 2.3% of the variance while holding all other variables constant. Based on the significant coefficients the top three variables that increase voter turnout is median age, Democrats percentage, and poverty rate while the top three variables that decrease voter turnout are adult obesity, Libertarian percentage, and the number of poor physical health days. 
+
+### PCA-based Regression
+
+We first load in the dataset and remove additional feature columns with sparse data that would remove a significant amount of observations, namely "Adult_Smoking", "Poor_Physical_Health", "Poor_Mental_Health", and "HIV_Rate". Other variables omitted at this step were categorical labels "County" and "State" that would not be included in the principal components. Also, the variable "Votes" was removed since "Turnout" was calculated from the number of votes. Finally, we temporarily separate the "Turnout" variable as this is the target variable. 
+
+```{r, echo=FALSE}
+votes <- read.csv('https://raw.githubusercontent.com/KaushikKoirala/SDS323_Spring2020/master/Final%20Project/2016_election_county_dataset.csv')
+variables = votes %>% select(-Turnout, -County, -State, -Votes, -Adult_Smoking, -Poor_Physical_Health, -Poor_Mental_Health, -HIV_Rate)
+```
+
+The PCA is performed on the remaining 42 variables after scaling. The results are summarized in the table and scree plot below. From the summary, we see that the first PC only accounts for 28.68% of variance in the data. Using the first three components, we can account for 52.68% of variance. 
+
+```{r, echo=FALSE}
+PCAvotes = prcomp(~., data=variables, scale=TRUE)
+summary(PCAvotes) 
+# scree plot
+PCAvotes.var <- PCAvotes$sdev^2
+PCAvotes.var.per <- round(PCAvotes.var/sum(PCAvotes.var)*100, 1)
+barplot(PCAvotes.var.per, main = "Scree Plot", xlab="Principle Components", ylab="Percent Variation")
+```
+
+We now look at the loadings for PC1. From ranking the top 10 variables in decreasing absolute values, we see that the strongest associated variables are negative, namely "Child_Family_Poverty", "LT_High_School", followed by "Poverty_Rate", "Teen_Births", "LT6_Poverty", "Elderly_Poverty", and "Diabetes". Conversely, the most positively correlated variables are "GT_High_School", "GT_Bachelors_Degree", and "Management". 
+
+```{r, echo=FALSE}
+# look at loadings of PC1 
+loadings = PCAvotes$rotation[,1]
+abs_scores = abs(loadings)
+ranked_scores = sort(abs_scores, decreasing=TRUE)
+top10 = names(ranked_scores[1:10])
+PCAvotes$rotation[top10, 1]
+```
+
+
+
+```{r, echo=FALSE}
+# principle component regression
+test <- votes %>% select(-County, -State, -Votes, -Adult_Smoking, -Poor_Physical_Health, -Poor_Mental_Health, -HIV_Rate)
+test2 = merge(test, PCAvotes$x[,1:8], by="row.names") %>% select(-Row.names)
+test = merge(test, PCAvotes$x[,1:3], by="row.names") %>% select(-Row.names)
+
+lm1 = lm(Turnout ~ PC1+PC2+PC3, data=test)
+summary(lm1)
+
+RMSE <- function(error) { sqrt(mean(error^2)) }
+e1 = RMSE(lm1$residuals)
+```
+In comparison to the linear model above, the feature variables selected in common using PCA are "Poverty_Rate", "LT_High_School", and "Teen_Births", thus verifying that these are important predictors for voter turnout. 
+Now we build a regression model using the principle components. The first model with PC1, PC2, and PC3 as predictors performed with an RMSE of `r e1`. Overall, this was a significant model with p<2.2e-16 as summarized.
+
+```{r, echo=FALSE}
+lm2 = lm(Turnout ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8, data=test2)
+summary(lm2)
+e2 = RMSE(lm2$residuals)
+```
+
+While the coefficients of a principle component regression model cannot be easily interpreted, we recognize the results as verification that the strongly correlated variables of children in families in poverty, percentage with high school diploma, and poverty rate are the best predictors that we have. To confirm this, we perform another regression model including up to PC8, which in total accounts for 71.99% variance in the data. This model was also significant (p<2.2e-16) with RMSE `r e2`, which is not a significant improvement from the previous model using only three PCs. 
+
+From the results of PCA, we plot the data along the first two principal components. To better visualize the data since the model does not account for the majority of variations, we split the dataset into two tiers: high turnout (above mean) and low turnout (below mean). The plot between PC1 and PC2 shows no clear distinction between the two tiers, as is the case for PC2 and PC3, and PC1 and PC3 (shown in appendix). This trend is fairly consistent across all states as shown in the faceted plot below with variations in each state. 
+
+```{r, echo=FALSE}
+scores = PCAvotes$x
+both = merge(votes, PCAvotes$x[,1:3], by="row.names") %>% select(-Row.names, -Votes, -County)
+high_turnout <- both %>% filter(Turnout > mean(Turnout, na.rm=TRUE)) %>% mutate(Tier="high") %>% select(-Turnout)
+low_turnout <- both %>% filter(Turnout < mean(Turnout, na.rm=TRUE)) %>% mutate(Tier="low") %>% select(-Turnout)
+by_tier <- full_join(high_turnout, low_turnout)
+qplot(scores[,1], scores[,2], color=Tier, facets=~State, xlab='Component 1', ylab='Component 2', main="Variations in voter turnout across different states", data = by_tier)
+```
+
+### KNN 
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center', fig.cap="price vs mileage distribution for each trim"}
+voterdata <- read.csv("https://raw.githubusercontent.com/KaushikKoirala/SDS323_Spring2020/master/Final%20Project/2016_election_county_dataset.csv")
+# Change all N/A values to zero 
+voterdata[is.na(voterdata)] <- 0
+#voterdata <- na.omit(voterdata)
+voterdata$County <- NULL
+voterdata$State <- NULL
+voterdata$Votes <- NULL
+voterdata$Precincts <- scale(voterdata$Precincts)
+voterdata$Republican <- scale(voterdata$Republican)
+voterdata$Democrat <- scale(voterdata$Democrat)
+voterdata$Green <- scale(voterdata$Green)
+voterdata$Libertarian <- scale(voterdata$Libertarian)
+voterdata$LT_High_School <- scale(voterdata$LT_High_School)
+voterdata$GT_High_School <- scale(voterdata$GT_High_School)
+voterdata$GT_Bachelors_Degree <- scale(voterdata$GT_Bachelors_Degree)
+voterdata$Graduate_Degree <- scale(voterdata$Graduate_Degree)
+voterdata$School_Enrollment <- scale(voterdata$School_Enrollment)
+voterdata$Median_Earn_2010 <- scale(voterdata$Median_Earn_2010)
+voterdata$White_Not_Latino <- scale(voterdata$White_Not_Latino)
+voterdata$African_American <- scale(voterdata$African_American)
+voterdata$Native_American <- scale(voterdata$Native_American)
+voterdata$Asian_American <- scale(voterdata$Asian_American)
+voterdata$Other_Race <- scale(voterdata$Other_Race)
+voterdata$Latino <- scale(voterdata$Latino)
+voterdata$LT6_Poverty <- scale(voterdata$LT6_Poverty)
+voterdata$Eldery_Poverty <- scale(voterdata$Eldery_Poverty)
+voterdata$Total_Population <- scale(voterdata$Total_Population)
+voterdata$Preschool_Enrollment <- scale(voterdata$Preschool_Enrollment)
+voterdata$Poverty_Rate <- scale(voterdata$Poverty_Rate)
+voterdata$Gini_Coefficient <- scale(voterdata$Gini_Coefficient)
+voterdata$Child_Family_Poverty <- scale(voterdata$Child_Family_Poverty)
+voterdata$Management <- scale(voterdata$Management)
+voterdata$Service <- scale(voterdata$Service)
+voterdata$Office <- scale(voterdata$Office)
+voterdata$Agriculture <- scale(voterdata$Agriculture)
+voterdata$Construction_Maintenance <- scale(voterdata$Construction_Maintenance)
+voterdata$Production_Transportation <- scale(voterdata$Production_Transportation)
+voterdata$Sire_Homogeneity <- scale(voterdata$Sire_Homogeneity)
+voterdata$Median_Age <- scale(voterdata$Median_Age)
+voterdata$Poor_Physical_Health <- NULL
+voterdata$Poor_Mental_Health <- NULL
+voterdata$Low_Birthweight <- NULL
+voterdata$Teen_Births <- NULL
+voterdata$Children_1_Parent <- scale(voterdata$Children_1_Parent)
+voterdata$Adult_Smoking <- NULL
+voterdata$Adult_Obesity <- NULL
+voterdata$Diabetes <- NULL
+voterdata$STDs <- NULL
+voterdata$HIV_Rate <- NULL
+voterdata$Uninsured <- scale(voterdata$Uninsured)
+voterdata$Unemployment <- scale(voterdata$Unemployment)
+voterdata$Violent_Crime <- scale(voterdata$Violent_Crime)
+voterdata$Injury_Deaths <- scale(voterdata$Injury_Deaths)
+```
+
+The following is the average (across 50 train-test split partitions) RMSE vs k-value plot for the voter turnout. Here we are using all of the remaining features, and checking if these features will result is a low RMSE:
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center'}
+lower_bounds = 3
+upper_bounds = 50
+my_plotter <- function(dataToPlot){
+  # Make a train-test split for voterdata
+  N = nrow(dataToPlot)
+  N_train = floor(0.8*N)
+  N_test = N - N_train
+  rmse_values <- vector(mode="integer", length=(upper_bounds-lower_bounds)+1)
+  #####
+  # Train/test split for voterdata Data
+  #####
+  do(50)*{
+    train_ind = sample.int(N, N_train, replace=FALSE)
+    D_train = dataToPlot[train_ind,]
+    D_test = D_test = dataToPlot[-train_ind,]
+
+    #X_train = select(D_train, -County, -State, -Votes, -Poor_Mental_Health, -Poor_Physical_Health, -Adult_Smoking, -HIV_Rate, -Low_Birthweight, -Teen_Births)
+    #X_train = select(D_train, Precincts, Republican, Democrat, Green, Libertarian, LT_High_School, GT_Bachelors_Degree, GT_High_School, Graduate_Degree, School_Enrollment, Median_Earn_2010)
+    X_train = select(D_test, everything())
+    y_train = select(D_train, Turnout)
+    #X_test = select(D_test, -County, -State, -Votes, -Poor_Mental_Health, -Poor_Physical_Health, -Adult_Smoking, -HIV_Rate, -Low_Birthweight, -Teen_Births)
+    #X_test = select(D_test, Precincts, Republican, Democrat, Green, Libertarian, LT_High_School, GT_Bachelors_Degree, GT_High_School, Graduate_Degree, School_Enrollment, Median_Earn_2010)
+    X_test = select(D_test, everything())
+    y_test = select(D_test, Turnout)
+    #y_train_vector <- y_train[,1]
+    
+    for (k_val in lower_bounds:upper_bounds){
+      knn_fit = knn.reg(train = X_train, test = X_test, y = y_train, k=k_val)
+      rmse = function(y, ypred) {
+        sqrt(mean(data.matrix((y-ypred)^2)))
+      }
+      ypred_knn250 = knn_fit$pred
+      rmse_values[k_val-lower_bounds+1] = rmse(y_test, ypred_knn250) +    
+        rmse_values[k_val-lower_bounds+1]
+    }
+    
+  }
+  for (k_val in lower_bounds:upper_bounds){
+    rmse_values[k_val-lower_bounds+1] = rmse_values[k_val-lower_bounds+1]/100
+  }
+
+  plt_title = "RMSE vs K for KNN Model" 
+  
+  print(ggplot()+
+    geom_point(mapping=aes(x=(lower_bounds:upper_bounds), y=rmse_values))+
+      labs(title=plt_title, x="k-value", y="RMSE"))
+  answer_values <- vector(mode="integer", length=2)
+  answer_values[1] = which.min(rmse_values) + lower_bounds - 1
+  answer_values[2] = min(rmse_values)
+  return(answer_values)
+}
+answer_vector = my_plotter(voterdata)
+best_k = answer_vector[1]
+lowest_rmse = answer_vector[2]
+```
+
+The best k-value using knn is `r best_k` and the RMSE at that k-value is  `r lowest_rmse`. 
+
+Now in the second run of the KNN algorithm, we want to remove some more features. In this case we only include the following features for our train/test split: Precincts, Republican, Democrat, Green, Libertarian, LT_High_School, GT_Bachelors_Degree, GT_High_School, Graduate_Degree, School_Enrollment, Median_Earn_2010.
+
+```{r,echo=FALSE, out.width='.49\\linewidth', fig.width=5, fig.height=3,fig.show='hold',fig.align='center'}
+lower_bounds = 3
+upper_bounds = 50
+my_plotter <- function(dataToPlot){
+  # Make a train-test split for voterdata
+  N = nrow(dataToPlot)
+  N_train = floor(0.8*N)
+  N_test = N - N_train
+  rmse_values <- vector(mode="integer", length=(upper_bounds-lower_bounds)+1)
+  #####
+  # Train/test split for voterdata Data
+  #####
+  do(50)*{
+    train_ind = sample.int(N, N_train, replace=FALSE)
+    D_train = dataToPlot[train_ind,]
+    D_test = D_test = dataToPlot[-train_ind,]
+    
+
+    X_train = select(D_train, Precincts, Republican, Democrat, Green, Libertarian, LT_High_School, GT_Bachelors_Degree, GT_High_School, Graduate_Degree, School_Enrollment, Median_Earn_2010)
+    y_train = select(D_train, Turnout)
+    X_test = select(D_test, Precincts, Republican, Democrat, Green, Libertarian, LT_High_School, GT_Bachelors_Degree, GT_High_School, Graduate_Degree, School_Enrollment, Median_Earn_2010)
+    #X_test = select(D_test, everything())
+    y_test = select(D_test, Turnout)
+    #y_train_vector <- y_train[,1]
+    
+    for (k_val in lower_bounds:upper_bounds){
+      knn_fit = knn.reg(train = X_train, test = X_test, y = y_train, k=k_val)
+      rmse = function(y, ypred) {
+        sqrt(mean(data.matrix((y-ypred)^2)))
+      }
+      ypred_knn250 = knn_fit$pred
+      rmse_values[k_val-lower_bounds+1] = rmse(y_test, ypred_knn250) +    
+        rmse_values[k_val-lower_bounds+1]
+    }
+    
+  }
+  for (k_val in lower_bounds:upper_bounds){
+    rmse_values[k_val-lower_bounds+1] = rmse_values[k_val-lower_bounds+1]/100
+  }
+
+  plt_title = "RMSE vs K for KNN Model" 
+  
+  print(ggplot()+
+    geom_point(mapping=aes(x=(lower_bounds:upper_bounds), y=rmse_values))+
+      labs(title=plt_title, x="k-value", y="RMSE"))
+  answer_values <- vector(mode="integer", length=2)
+  answer_values[1] = which.min(rmse_values) + lower_bounds - 1
+  answer_values[2] = min(rmse_values)
+  return(answer_values)
+}
+answer_vector = my_plotter(voterdata)
+best_k = answer_vector[1]
+lowest_rmse = answer_vector[2]
+```
+
+The best k-value using knn is `r best_k` and the RMSE at that k-value is  `r lowest_rmse`. 
+
+
+### Random Forests
+```{r, include=FALSE}
+election_data = read.csv('https://raw.githubusercontent.com/KaushikKoirala/SDS323_Spring2020/master/Final%20Project/2016_election_county_dataset.csv')
+election_data_input = subset(election_data, select = -c(County, Votes, State, Poor_Physical_Health, Poor_Mental_Health, Adult_Smoking, HIV_Rate))
+election_data_input = na.omit(election_data_input)
+n = nrow(election_data_input)
+n
+
+n_train = floor(.8*n)
+n_test = n - n_train
+train_cases = sample.int(n, size=n_train, replace=FALSE)
+election_train = election_data_input[train_cases,]
+election_test = election_data_input[-train_cases,]
+y_all = election_data_input$Turnout
+x_all = model.matrix(~.-Turnout, data=election_data_input)
+y_train = y_all[train_cases]
+x_train = x_all[train_cases,]
+
+y_test = y_all[-train_cases]
+x_test = x_all[-train_cases,]
+forest1 = randomForest(Turnout ~., data=election_train, importance=TRUE)
+yhat_test = predict(forest1, election_test)
+#plot(yhat_test, y_test)
+rmse_val_rf = (yhat_test - y_test)^2 %>% mean %>% sqrt
+#plot(forest1)
+#forest1$mtry
+
+```
+The RMSE for the RandomForests model is `r rmse_val_rf`. The plot below shows the Variable Importance Plot for the RandomForests model, with the 10 most important variables. This plot shows if the variable is ignored and not allowed to split in the randomforest, how much worse the MSE gets percent wise.
+
+```{r,echo=FALSE}
+varImpPlot(forest1, sort=TRUE, n.var=10,main='Variable Importance Plot for Turnout RandomForest Regression')
+```
+Some of the most important variables, for example, that are contributing to how this model would predict turnout in a county seem to be the Latino population percentage in a county, the median age in a county, and the African-American population percentage in a county.
+
+## V. Conclusion
+Based on the learning models' RMSEs, KNN seemed to perform the best, which may be due to the inherent flexibility in the model compared to the other methods. It performed at two orders of magnitude better than the other models, but it  failed in indicating specific factors that contributed significantly to voter turnout. The other three models (linear regression, PCA and regression, random forest) resulted in lower RMSEs. This is resonable given the range of variables in the dataset and baseline variations in the voting population. The linear and random forest models provided better indications as to which factors could strongly predict turnout. A large limitation in the linear regression model is the removal of 470 counties due to lack of data and 185 counties removed for being outliers. These removed counties could have accounted for other trends that were not included. Also, this method is computationally intensive since the variables are added and removed manually and are subject to human error. Similarly, the random forest approach suffered greatly from unavailable data and due to supporting a greater number of variables. Overall, PCA produced results that were difficult to interpret, but served to confirm the important variables used in linear regression. 
+
+The low socioeconomic indicators in these models, such as teen birth rates, unemplotment rates, and poor physical health, negatively correlated with voter turnout for all of the models. This implies that these counties may not be the most efficient places to concentrate on during an election. Another factor that may be important is the relative make-up of the county’s political affiliation. Based on some aspects of the linear model, an increase in independent political affiliations tends to decrease voter turnout overall which can be seen as places where one could attempt to polarize the voter base. It is important to note however that there are many variations and factors unaccounted for such as culture and religion in the dataset that may have large impacts on voter tendencies that can be used to improve these models further. 
+
+
